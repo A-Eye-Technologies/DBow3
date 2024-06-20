@@ -1177,70 +1177,73 @@ void Vocabulary::save(cv::FileStorage &f,
 
 }
 
-void Vocabulary::toStream(  std::ostream &out_str, bool compressed) const throw(std::exception){
+void Vocabulary::toStream(std::ostream &out_str, bool compressed) const
+{
 
-    uint64_t sig=88877711233;//magic number describing the file
-    out_str.write((char*)&sig,sizeof(sig));
-    out_str.write((char*)&compressed,sizeof(compressed));
-    uint32_t nnodes=m_nodes.size();
-    out_str.write((char*)&nnodes,sizeof(nnodes));
-    if (nnodes==0)return;
-    //save everything to a stream
-    std::stringstream aux_stream;
-    aux_stream.write((char*)&m_k,sizeof(m_k));
-    aux_stream.write((char*)&m_L,sizeof(m_L));
-    aux_stream.write((char*)&m_scoring,sizeof(m_scoring));
-    aux_stream.write((char*)&m_weighting,sizeof(m_weighting));
-    //nodes
-    std::vector<NodeId> parents={0};// root
+  uint64_t sig = 88877711233; // magic number describing the file
+  out_str.write((char *)&sig, sizeof(sig));
+  out_str.write((char *)&compressed, sizeof(compressed));
+  uint32_t nnodes = m_nodes.size();
+  out_str.write((char *)&nnodes, sizeof(nnodes));
+  if (nnodes == 0)
+    return;
+  // save everything to a stream
+  std::stringstream aux_stream;
+  aux_stream.write((char *)&m_k, sizeof(m_k));
+  aux_stream.write((char *)&m_L, sizeof(m_L));
+  aux_stream.write((char *)&m_scoring, sizeof(m_scoring));
+  aux_stream.write((char *)&m_weighting, sizeof(m_weighting));
+  // nodes
+  std::vector<NodeId> parents = {0}; // root
 
+  while (!parents.empty())
+  {
+    NodeId pid = parents.back();
+    parents.pop_back();
 
-    while(!parents.empty())
+    const Node &parent = m_nodes[pid];
+
+    for (auto pit : parent.children)
     {
-        NodeId pid = parents.back();
-        parents.pop_back();
 
-        const Node& parent = m_nodes[pid];
-
-        for(auto pit :parent.children)
-        {
-
-            const Node& child = m_nodes[pit];
-            aux_stream.write((char*)&child.id,sizeof(child.id));
-            aux_stream.write((char*)&pid,sizeof(pid));
-            aux_stream.write((char*)&child.weight,sizeof(child.weight));
-            DescManip::toStream(child.descriptor,aux_stream);
-            // add to parent list
-            if(!child.isLeaf()) parents.push_back(pit);
-        }
+      const Node &child = m_nodes[pit];
+      aux_stream.write((char *)&child.id, sizeof(child.id));
+      aux_stream.write((char *)&pid, sizeof(pid));
+      aux_stream.write((char *)&child.weight, sizeof(child.weight));
+      DescManip::toStream(child.descriptor, aux_stream);
+      // add to parent list
+      if (!child.isLeaf())
+        parents.push_back(pit);
     }
-    //words
-    //save size
-    uint32_t m_words_size=m_words.size();
-    aux_stream.write((char*)&m_words_size,sizeof(m_words_size));
-    for(auto wit = m_words.begin(); wit != m_words.end(); wit++)
-    {
-        WordId id = wit - m_words.begin();
-        aux_stream.write((char*)&id,sizeof(id));
-        aux_stream.write((char*)&(*wit)->id,sizeof((*wit)->id));
-    }
+  }
+  // words
+  // save size
+  uint32_t m_words_size = m_words.size();
+  aux_stream.write((char *)&m_words_size, sizeof(m_words_size));
+  for (auto wit = m_words.begin(); wit != m_words.end(); wit++)
+  {
+    WordId id = wit - m_words.begin();
+    aux_stream.write((char *)&id, sizeof(id));
+    aux_stream.write((char *)&(*wit)->id, sizeof((*wit)->id));
+  }
 
-
-    //now, decide if compress or not
-    if (compressed){
-        qlz_state_compress  state_compress;
-        memset(&state_compress, 0, sizeof(qlz_state_compress));
-        //Create output buffer
-        int chunkSize=10000;
-        std::vector<char> compressed( chunkSize+size_t(400), 0);
-        std::vector<char> input( chunkSize, 0);
-        int64_t total_size= static_cast<int64_t>(aux_stream.tellp());
-        uint64_t total_compress_size=0;
-        //calculate how many chunks will be written
-        uint32_t nChunks= total_size / chunkSize;
-        if ( total_size%chunkSize!=0) nChunks++;
-        out_str.write((char*)&nChunks, sizeof(nChunks));
-        //start compressing the chunks
+  // now, decide if compress or not
+  if (compressed)
+  {
+    qlz_state_compress state_compress;
+    memset(&state_compress, 0, sizeof(qlz_state_compress));
+    // Create output buffer
+    int chunkSize = 10000;
+    std::vector<char> compressed(chunkSize + size_t(400), 0);
+    std::vector<char> input(chunkSize, 0);
+    int64_t total_size = static_cast<int64_t>(aux_stream.tellp());
+    uint64_t total_compress_size = 0;
+    // calculate how many chunks will be written
+    uint32_t nChunks = total_size / chunkSize;
+    if (total_size % chunkSize != 0)
+      nChunks++;
+    out_str.write((char *)&nChunks, sizeof(nChunks));
+    // start compressing the chunks
 		while (total_size != 0){
             int readSize=chunkSize;
             if (total_size<chunkSize) readSize=total_size;
@@ -1256,13 +1259,14 @@ void Vocabulary::toStream(  std::ostream &out_str, bool compressed) const throw(
     }
 }
 
+void Vocabulary::load_fromtxt(const std::string &filename)
+{
 
-void Vocabulary:: load_fromtxt(const std::string &filename)throw(std::runtime_error){
-
-    std::ifstream ifile(filename);
-    if(!ifile)throw std::runtime_error("Vocabulary:: load_fromtxt  Could not open file for reading:"+filename);
-    int n1, n2;
-    {
+  std::ifstream ifile(filename);
+  if (!ifile)
+    throw std::runtime_error("Vocabulary:: load_fromtxt  Could not open file for reading:" + filename);
+  int n1, n2;
+  {
     std::string str;
     getline(ifile,str);
     std::stringstream ss(str);
@@ -1332,77 +1336,81 @@ void Vocabulary:: load_fromtxt(const std::string &filename)throw(std::runtime_er
            }
        }
 }
-void Vocabulary::fromStream(  std::istream &str )   throw(std::exception){
+void Vocabulary::fromStream(std::istream &str)
+{
 
-
-    m_words.clear();
-    m_nodes.clear();
-    uint64_t sig=0;//magic number describing the file
-    str.read((char*)&sig,sizeof(sig));
-    if (sig!=88877711233) throw std::runtime_error("Vocabulary::fromStream  is not of appropriate type");
-    bool compressed;
-    str.read((char*)&compressed,sizeof(compressed));
-    uint32_t nnodes;
-    str.read((char*)&nnodes,sizeof(nnodes));
-    if(nnodes==0)return;
-    std::stringstream decompressed_stream;
-    std::istream *_used_str=0;
-    if (compressed){
-        qlz_state_decompress state_decompress;
-        memset(&state_decompress, 0, sizeof(qlz_state_decompress));
-        int chunkSize=10000;
-        std::vector<char> decompressed(chunkSize);
-        std::vector<char> input(chunkSize+400);
-        //read how many chunks are there
-        uint32_t nChunks;
-        str.read((char*)&nChunks,sizeof(nChunks));
-        for(int i=0;i<nChunks;i++){
-            str.read(&input[0],9);
-            int c=qlz_size_compressed(&input[0]);
-            str.read(&input[9],c-9);
-            size_t d=qlz_decompress(&input[0], &decompressed[0], &state_decompress);
-            decompressed_stream.write(&decompressed[0],d);
-        }
-        _used_str=&decompressed_stream;
-    }
-    else{
-        _used_str=&str;
-    }
-
-    _used_str->read((char*)&m_k,sizeof(m_k));
-    _used_str->read((char*)&m_L,sizeof(m_L));
-    _used_str->read((char*)&m_scoring,sizeof(m_scoring));
-    _used_str->read((char*)&m_weighting,sizeof(m_weighting));
-
-    createScoringObject();
-    m_nodes.resize(nnodes );
-    m_nodes[0].id = 0;
-
-
-
-    for(size_t i = 1; i < m_nodes.size(); ++i)
+  m_words.clear();
+  m_nodes.clear();
+  uint64_t sig = 0; // magic number describing the file
+  str.read((char *)&sig, sizeof(sig));
+  if (sig != 88877711233)
+    throw std::runtime_error("Vocabulary::fromStream  is not of appropriate type");
+  bool compressed;
+  str.read((char *)&compressed, sizeof(compressed));
+  uint32_t nnodes;
+  str.read((char *)&nnodes, sizeof(nnodes));
+  if (nnodes == 0)
+    return;
+  std::stringstream decompressed_stream;
+  std::istream *_used_str = 0;
+  if (compressed)
+  {
+    qlz_state_decompress state_decompress;
+    memset(&state_decompress, 0, sizeof(qlz_state_decompress));
+    int chunkSize = 10000;
+    std::vector<char> decompressed(chunkSize);
+    std::vector<char> input(chunkSize + 400);
+    // read how many chunks are there
+    uint32_t nChunks;
+    str.read((char *)&nChunks, sizeof(nChunks));
+    for (int i = 0; i < nChunks; i++)
     {
-        NodeId nid;
-        _used_str->read((char*)&nid,sizeof(NodeId));
-        Node& child = m_nodes[nid];
-        child.id=nid;
-        _used_str->read((char*)&child.parent,sizeof(child.parent));
-        _used_str->read((char*)&child.weight,sizeof(child.weight));
-        DescManip::fromStream(child.descriptor,*_used_str);
-        m_nodes[child.parent].children.push_back(child.id);
-     }
-     //    // words
-    uint32_t m_words_size;
-    _used_str->read((char*)&m_words_size,sizeof(m_words_size));
-    m_words.resize(m_words_size);
-    for(unsigned int i = 0; i < m_words.size(); ++i)
-    {
-        WordId wid;NodeId nid;
-        _used_str->read((char*)&wid,sizeof(wid));
-        _used_str->read((char*)&nid,sizeof(nid));
-        m_nodes[nid].word_id = wid;
-        m_words[wid] = &m_nodes[nid];
+      str.read(&input[0], 9);
+      int c = qlz_size_compressed(&input[0]);
+      str.read(&input[9], c - 9);
+      size_t d = qlz_decompress(&input[0], &decompressed[0], &state_decompress);
+      decompressed_stream.write(&decompressed[0], d);
     }
+    _used_str = &decompressed_stream;
+  }
+  else
+  {
+    _used_str = &str;
+  }
+
+  _used_str->read((char *)&m_k, sizeof(m_k));
+  _used_str->read((char *)&m_L, sizeof(m_L));
+  _used_str->read((char *)&m_scoring, sizeof(m_scoring));
+  _used_str->read((char *)&m_weighting, sizeof(m_weighting));
+
+  createScoringObject();
+  m_nodes.resize(nnodes);
+  m_nodes[0].id = 0;
+
+  for (size_t i = 1; i < m_nodes.size(); ++i)
+  {
+    NodeId nid;
+    _used_str->read((char *)&nid, sizeof(NodeId));
+    Node &child = m_nodes[nid];
+    child.id = nid;
+    _used_str->read((char *)&child.parent, sizeof(child.parent));
+    _used_str->read((char *)&child.weight, sizeof(child.weight));
+    DescManip::fromStream(child.descriptor, *_used_str);
+    m_nodes[child.parent].children.push_back(child.id);
+  }
+  //    // words
+  uint32_t m_words_size;
+  _used_str->read((char *)&m_words_size, sizeof(m_words_size));
+  m_words.resize(m_words_size);
+  for (unsigned int i = 0; i < m_words.size(); ++i)
+  {
+    WordId wid;
+    NodeId nid;
+    _used_str->read((char *)&wid, sizeof(wid));
+    _used_str->read((char *)&nid, sizeof(nid));
+    m_nodes[nid].word_id = wid;
+    m_words[wid] = &m_nodes[nid];
+  }
 }
 // --------------------------------------------------------------------------
 

@@ -13,6 +13,11 @@
 #include <map>
 #include <vector>
 #include "exports.h"
+
+#include <ostream> 
+#include <string>  
+#include <cstdint> 
+
 #if _WIN32
 #include <cstdint>
 #endif

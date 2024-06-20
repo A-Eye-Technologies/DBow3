@@ -299,8 +299,8 @@ public:
    */
   int getDescritorType()const;
   //io to-from a stream
-  void toStream(  std::ostream &str, bool compressed=true) const throw(std::exception);
-  void fromStream(  std::istream &str )   throw(std::exception);
+  void toStream(  std::ostream &str, bool compressed=true) const;
+  void fromStream(  std::istream &str );
 
  protected:
 
@@ -435,34 +435,34 @@ protected:
 
    /**Loads from ORBSLAM txt files
     */
-   void load_fromtxt(const std::string &filename)throw(std::runtime_error);
+   void load_fromtxt(const std::string &filename);
 
-protected:
+ protected:
+   /// Branching factor
+   int m_k;
 
-  /// Branching factor
-  int m_k;
-  
-  /// Depth levels 
-  int m_L;
-  
-  /// Weighting method
-  WeightingType m_weighting;
-  
-  /// Scoring method
-  ScoringType m_scoring;
-  
-  /// Object for computing scores
-  GeneralScoring* m_scoring_object;
-  
-  /// Tree nodes
-  std::vector<Node> m_nodes;
-  
-  /// Words of the vocabulary (tree leaves)
-  /// this condition holds: m_words[wid]->word_id == wid
-  std::vector<Node*> m_words;
-public:
-  //for debug (REMOVE)
-  inline Node* getNodeWord(uint32_t idx){return m_words[idx];}
+   /// Depth levels
+   int m_L;
+
+   /// Weighting method
+   WeightingType m_weighting;
+
+   /// Scoring method
+   ScoringType m_scoring;
+
+   /// Object for computing scores
+   GeneralScoring *m_scoring_object;
+
+   /// Tree nodes
+   std::vector<Node> m_nodes;
+
+   /// Words of the vocabulary (tree leaves)
+   /// this condition holds: m_words[wid]->word_id == wid
+   std::vector<Node *> m_words;
+
+ public:
+   // for debug (REMOVE)
+   inline Node *getNodeWord(uint32_t idx) { return m_words[idx]; }
 
 };
 
