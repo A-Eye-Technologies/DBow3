@@ -1,4 +1,6 @@
 #include "Database.h"
+#include <fstream>
+#include <zlib.h>
 
 namespace DBoW3{
 
@@ -844,7 +846,7 @@ void Database::save(cv::FileStorage &fs,
   // imageId's and nodeId's must be stored in ascending order
   // (according to the construction of the indexes)
 
-  m_voc->save(fs);
+  // m_voc->save(fs);
 
   fs << name << "{";
 
@@ -919,7 +921,7 @@ void Database::load(const cv::FileStorage &fs,
   // subclasses must instantiate m_voc before calling this ::load
   if(!m_voc) m_voc = new Vocabulary;
 
-  m_voc->load(fs);
+  // m_voc->load(fs);
 
   // load database now
   clear(); // resizes inverted file
@@ -999,6 +1001,145 @@ std::ostream& operator<<(std::ostream &os,
 
   os << ". " << *db.getVocabulary();
   return os;
+}
+
+
+void Database::saveBinary(const std::string &filename) const {
+    std::ofstream ofs(filename, std::ios::binary);
+    if (!ofs.is_open()) {
+        throw std::runtime_error("Could not open file for writing");
+    }
+
+    std::stringstream ss;
+    ss.write(reinterpret_cast<const char*>(&m_nentries), sizeof(m_nentries));
+    ss.write(reinterpret_cast<const char*>(&m_use_di), sizeof(m_use_di));
+    ss.write(reinterpret_cast<const char*>(&m_dilevels), sizeof(m_dilevels));
+
+    // Save invertedIndex
+    uint32_t inverted_index_size = m_ifile.size();
+    ss.write(reinterpret_cast<const char*>(&inverted_index_size), sizeof(inverted_index_size));
+    for (const auto &row : m_ifile) {
+        uint32_t word_size = row.size();
+        ss.write(reinterpret_cast<const char*>(&word_size), sizeof(word_size));
+        for (const auto &word : row) {
+            ss.write(reinterpret_cast<const char*>(&word.entry_id), sizeof(word.entry_id));
+            ss.write(reinterpret_cast<const char*>(&word.word_weight), sizeof(word.word_weight));
+        }
+    }
+
+    if (m_use_di) {
+        uint32_t dsize = m_dfile.size();
+        ss.write(reinterpret_cast<const char*>(&dsize), sizeof(dsize));
+        for (const auto &entry : m_dfile) {
+            uint32_t esize = entry.size();
+            ss.write(reinterpret_cast<const char*>(&esize), sizeof(esize));
+            for (const auto &feature : entry) {
+                uint32_t nid = feature.first;
+                ss.write(reinterpret_cast<const char*>(&nid), sizeof(nid));
+                uint32_t fsize = feature.second.size();
+                ss.write(reinterpret_cast<const char*>(&fsize), sizeof(fsize));
+                for (const auto &f : feature.second) {
+                    ss.write(reinterpret_cast<const char*>(&f), sizeof(f));
+                }
+            }
+        }
+    }
+
+    std::string uncompressed_data = ss.str();
+    uLongf compressed_size = compressBound(uncompressed_data.size());
+    std::vector<char> compressed_data(compressed_size);
+
+    int res = compress(reinterpret_cast<Bytef*>(compressed_data.data()), &compressed_size, reinterpret_cast<const Bytef*>(uncompressed_data.data()), uncompressed_data.size());
+    if (res != Z_OK) {
+        throw std::runtime_error("Compression failed");
+    }
+
+    ofs.write(reinterpret_cast<const char*>(&compressed_size), sizeof(compressed_size));
+    ofs.write(compressed_data.data(), compressed_size);
+
+    ofs.close();
+}
+
+void Database::loadBinary(const std::string &filename) {
+    std::ifstream ifs(filename, std::ios::binary);
+    if (!ifs.is_open()) {
+        throw std::runtime_error("Could not open file for reading");
+    }
+
+    // Read compressed size
+    uLongf compressed_size;
+    ifs.read(reinterpret_cast<char*>(&compressed_size), sizeof(compressed_size));
+
+    // Read compressed data
+    std::vector<char> compressed_data(compressed_size);
+    ifs.read(compressed_data.data(), compressed_size);
+
+    // Allocate buffer for uncompressed data
+    uLongf uncompressed_size_estimate = compressed_size * 10; // Initial estimate of uncompressed size
+    std::vector<char> uncompressed_data(uncompressed_size_estimate);
+
+    // Decompress data
+    int res = uncompress(reinterpret_cast<Bytef*>(uncompressed_data.data()), &uncompressed_size_estimate, reinterpret_cast<const Bytef*>(compressed_data.data()), compressed_size);
+    if (res == Z_BUF_ERROR) {
+        // Buffer size was too small, resize and try again
+        uncompressed_size_estimate *= 2;
+        uncompressed_data.resize(uncompressed_size_estimate);
+        res = uncompress(reinterpret_cast<Bytef*>(uncompressed_data.data()), &uncompressed_size_estimate, reinterpret_cast<const Bytef*>(compressed_data.data()), compressed_size);
+    }
+    if (res != Z_OK) {
+        throw std::runtime_error("Decompression failed");
+    }
+
+    // Load data from uncompressed_data
+    std::stringstream ss(std::string(uncompressed_data.data(), uncompressed_size_estimate));
+
+    // Clear existing data structures
+    clear();
+
+    // Load metadata
+    ss.read(reinterpret_cast<char*>(&m_nentries), sizeof(m_nentries));
+    ss.read(reinterpret_cast<char*>(&m_use_di), sizeof(m_use_di));
+    ss.read(reinterpret_cast<char*>(&m_dilevels), sizeof(m_dilevels));
+
+    // Load invertedIndex
+    uint32_t inverted_index_size;
+    ss.read(reinterpret_cast<char*>(&inverted_index_size), sizeof(inverted_index_size));
+    m_ifile.resize(inverted_index_size);
+    for (uint32_t wid = 0; wid < inverted_index_size; ++wid) {
+        uint32_t word_size;
+        ss.read(reinterpret_cast<char*>(&word_size), sizeof(word_size));
+        for (uint32_t i = 0; i < word_size; ++i) {
+            EntryId eid;
+            WordValue v;
+            ss.read(reinterpret_cast<char*>(&eid), sizeof(eid));
+            ss.read(reinterpret_cast<char*>(&v), sizeof(v));
+            m_ifile[wid].emplace_back(eid, v);
+        }
+    }
+
+    // Load directIndex if in use
+    if (m_use_di) {
+        uint32_t direct_index_size;
+        ss.read(reinterpret_cast<char*>(&direct_index_size), sizeof(direct_index_size));
+        m_dfile.resize(direct_index_size);
+        for (uint32_t eid = 0; eid < direct_index_size; ++eid) {
+            uint32_t node_size;
+            ss.read(reinterpret_cast<char*>(&node_size), sizeof(node_size));
+            for (uint32_t i = 0; i < node_size; ++i) {
+                NodeId nid;
+                ss.read(reinterpret_cast<char*>(&nid), sizeof(nid));
+                uint32_t feature_size;
+                ss.read(reinterpret_cast<char*>(&feature_size), sizeof(feature_size));
+                std::vector<unsigned int> features(feature_size);
+                for (uint32_t j = 0; j < feature_size; ++j) {
+                    ss.read(reinterpret_cast<char*>(&features[j]), sizeof(features[j]));
+                }
+                m_dfile[eid].emplace(nid, std::move(features));
+            }
+        }
+    }
+
+    ifs.close();
 }
 
 }

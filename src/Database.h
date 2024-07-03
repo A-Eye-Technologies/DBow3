@@ -249,7 +249,8 @@ public:
  DBOW_API friend   std::ostream& operator<<(std::ostream &os,
                                     const Database &db);
 
-
+void saveBinary(const std::string &filename) const;
+void loadBinary(const std::string &filename);
 
 protected:
   
